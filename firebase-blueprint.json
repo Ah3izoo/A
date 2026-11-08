@@ -1,0 +1,49 @@
+{
+  "entities": {
+    "SalesRecord": {
+      "title": "SalesRecord",
+      "description": "Represents an individual sales transaction invoice for Jamjoom Pharma products.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "customerName": { "type": "string" },
+        "category": { "type": "string" },
+        "itemName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "totalSales": { "type": "number" },
+        "salesRep": { "type": "string" },
+        "notes": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["date", "customerName", "category", "itemName", "quantity", "unitPrice", "totalSales", "salesRep"]
+    },
+    "ProductItem": {
+      "title": "ProductItem",
+      "description": "Represents an official Jamjoom Pharma product item and wholesale price.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productName": { "type": "string" },
+        "genericName": { "type": "string" },
+        "category": { "type": "string" },
+        "wholesalePrice": { "type": "number" },
+        "retailPrice": { "type": "number" },
+        "inStock": { "type": "boolean" }
+      },
+      "required": ["productName", "genericName", "category", "wholesalePrice"]
+    }
+  },
+  "firestore": {
+    "/salesRecords/{recordId}": {
+      "schema": "SalesRecord",
+      "description": "Collection of all sales records and invoices registered by medical reps."
+    },
+    "/products/{productId}": {
+      "schema": "ProductItem",
+      "description": "Official Jamjoom Pharma catalog and wholesale price list."
+    }
+  }
+}

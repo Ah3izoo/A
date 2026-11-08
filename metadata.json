@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Remix ahmed jam",
+  "description": "منصة مبيعات ذكية لإدارة الفواتير والتقارير وتحميل وطباعة فواتير PDF على الهاتف مع الوضع الليلي للمندوب الطبي (ahmed jam).",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

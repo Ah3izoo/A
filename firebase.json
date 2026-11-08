@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "database": "ai-studio-lookerstudiosale-0c44a860-aea7-41d4-ae7f-682a62e50125",
+    "rules": "firestore.rules"
+  }
+}

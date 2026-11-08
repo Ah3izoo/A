@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ahmed App</string>
+    <string name="title_activity_main">Ahmed App</string>
+    <string name="package_name">com.looker.sales.ahmedjam</string>
+    <string name="custom_url_scheme">com.looker.sales.ahmedjam</string>
+</resources>
