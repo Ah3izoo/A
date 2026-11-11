@@ -1,11 +1,13 @@
 import { ProductItem } from '../types';
+import { KAMBAL_CATALOG } from './kambalCatalog';
 
 export const APP_NAME = 'Ahmed App';
 export const SUPPLIER_LINE = 'Jamjoom Pharma (شركة كمبال العالمية للأدوية)';
 export const DEFAULT_SALES_REP = 'أحمد عزالدين عثمان (ahmed jam)';
 
+export const MASTER_PRODUCT_CATALOG: ProductItem[] = KAMBAL_CATALOG;
 
-export const MASTER_PRODUCT_CATALOG: ProductItem[] = [
+export const LEGACY_PRODUCT_CATALOG: ProductItem[] = [
   {
     id: 'prod-01',
     productName: 'Acretin 0.05 cream',

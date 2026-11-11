@@ -5,6 +5,8 @@ import { exportToCSV } from '../utils/csvHelper';
 import { saveFileToPhoneStorage } from '../services/phoneStorageService';
 import { WarehouseCsvExportModal } from './WarehouseCsvExportModal';
 
+import { KAMBAL_CATALOG } from '../data/kambalCatalog';
+
 interface WarehouseManagerProps {
   catalog: ProductItem[];
   onUpdateCatalog: (updatedCatalog: ProductItem[]) => void;
@@ -32,6 +34,53 @@ export const WarehouseManager: React.FC<WarehouseManagerProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showClearAllStockModal, setShowClearAllStockModal] = useState<boolean>(false);
   const [isWarehouseCsvModalOpen, setIsWarehouseCsvModalOpen] = useState<boolean>(false);
+
+  // Batch Quantities Modal State (زر واحد لإضافة كميات لجميع الأصناف معاً)
+  const [showBatchStockModal, setShowBatchStockModal] = useState<boolean>(false);
+  const [batchAmount, setBatchAmount] = useState<number>(100);
+  const [batchMode, setBatchMode] = useState<'add' | 'set'>('add');
+
+  // One-click quick batch stock addition
+  const handleQuickAddAllStock = (amount: number) => {
+    const updated = catalog.map((item) => ({
+      ...item,
+      warehouseStock: Math.max(0, (item.warehouseStock ?? 0) + amount),
+    }));
+    onUpdateCatalog(updated);
+    showToast(`✓ تم بنجاح إضافة (+${amount} عبوة) لجميع أصناف المستودع (${catalog.length} صنف)!`);
+  };
+
+  // Batch modal submit
+  const handleBatchStockSubmit = () => {
+    const amount = Number(batchAmount);
+    if (isNaN(amount) || amount < 0) return;
+    const updated = catalog.map((item) => ({
+      ...item,
+      warehouseStock: batchMode === 'add'
+        ? Math.max(0, (item.warehouseStock ?? 0) + amount)
+        : Math.max(0, amount),
+    }));
+    onUpdateCatalog(updated);
+    setShowBatchStockModal(false);
+    showToast(
+      batchMode === 'add'
+        ? `✓ تم توريد وإضافة (+${amount} عبوة) لجميع أصناف المستودع (${catalog.length} صنف) بنجاح!`
+        : `✓ تم تعيين رصيد موحد (${amount} عبوة) لجميع أصناف المستودع (${catalog.length} صنف) بنجاح!`
+    );
+  };
+
+  // Import all Kambal items to warehouse if missing
+  const handleImportAllKambalToWarehouse = () => {
+    const existingNames = new Set(catalog.map((c) => c.productName.toLowerCase()));
+    const missing = KAMBAL_CATALOG.filter((k) => !existingNames.has(k.productName.toLowerCase()));
+    if (missing.length === 0) {
+      showToast('جميع أصناف كشف كمبال (125 صنف) موجودة بالفعل في المستودع!');
+      return;
+    }
+    const updated = [...catalog, ...missing.map((m) => ({ ...m, warehouseStock: 100 }))];
+    onUpdateCatalog(updated);
+    showToast(`✓ تمت إضافة (${missing.length}) صنفاً جديداً من كشف كمبال إلى المستودع بنجاح!`);
+  };
 
   // Clear / Zero out all quantities in the warehouse
   const handleClearAllStock = () => {
@@ -249,24 +298,69 @@ export const WarehouseManager: React.FC<WarehouseManagerProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          {/* One-click Button to Add Quantities to ALL Items */}
+          <button
+            type="button"
+            onClick={() => setShowBatchStockModal(true)}
+            className="px-3.5 py-2 text-xs font-black rounded-xl border border-blue-500 bg-blue-600 hover:bg-blue-700 text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
+            title="إضافة أو تعيين كميات لجميع أصناف المستودع دفعة واحدة بزر واحد"
+          >
+            <span>⚡</span>
+            <span>إضافة كميات لجميع الأصناف معاً (زر واحد)</span>
+          </button>
+
+          {/* Quick Preset: +100 to all */}
+          <button
+            type="button"
+            onClick={() => handleQuickAddAllStock(100)}
+            className="px-2.5 py-2 text-xs font-black rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 transition-all cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+            title="إضافة 100 عبوة فوراً لكل الأصناف"
+          >
+            <span>📦 +100 للكل</span>
+          </button>
+
+          {/* Quick Preset: +50 to all */}
+          <button
+            type="button"
+            onClick={() => handleQuickAddAllStock(50)}
+            className="px-2.5 py-2 text-xs font-black rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-800 dark:text-sky-200 transition-all cursor-pointer flex items-center gap-1 shadow-2xs active:scale-95"
+            title="إضافة 50 عبوة فوراً لكل الأصناف"
+          >
+            <span>⚡ +50 للكل</span>
+          </button>
+
+          {/* Import all Kambal items to warehouse if count is less than 125 */}
+          {catalog.length < 125 && (
+            <button
+              type="button"
+              onClick={handleImportAllKambalToWarehouse}
+              className="px-3 py-2 text-xs font-black rounded-xl border border-amber-400 bg-amber-500 hover:bg-amber-600 text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm animate-pulse"
+              title="إضافة كشف أصناف كمبال الـ 125 صنفاً إلى المستودع"
+            >
+              <span>➕</span>
+              <span>إضافة كشف كمبال (125 صنف)</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setIsWarehouseCsvModalOpen(true)}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            className="px-3 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
             title="تخصيص وتعديل الجداول والأعمدة وتصدير ملف CSV لجرد المستودع"
           >
             <span>📊</span>
-            <span>تخصيص وتصدير جرد المخزن (CSV/Excel)</span>
+            <span>تصدير جرد المخزن</span>
           </button>
+
           <button
             type="button"
             onClick={() => setShowClearAllStockModal(true)}
-            className="px-3.5 py-2 text-xs font-black rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
+            className="px-3 py-2 text-xs font-bold rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
             title="تصفير وحذف جميع كميات الأصناف الحالية في المخزن دفعة واحدة"
           >
             <span>🗑️</span>
-            <span>تصفير وحذف كافة كميات المخزن</span>
+            <span>تصفير</span>
           </button>
         </div>
       </div>
@@ -737,6 +831,137 @@ export const WarehouseManager: React.FC<WarehouseManagerProps> = ({
               >
                 حفظ التعديل في المخزن
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Stock Adjustment Modal (إضافة كميات لجميع الأصناف دفعة واحدة) */}
+      {showBatchStockModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full shadow-2xl border-2 border-blue-500 overflow-hidden text-slate-900 dark:text-slate-100">
+            <div className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-2xl shrink-0 font-black shadow-md">
+                    ⚡
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                      إضافة كميات لجميع الأصناف معاً (زر واحد)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      تطبيق سريع على كافة أصناف المستودع ({catalog.length} صنف)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchStockModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-lg"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Mode Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                  اختر طريقة التحديث لجميع الأصناف:
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setBatchMode('add')}
+                    className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                      batchMode === 'add'
+                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-600 text-blue-950 dark:text-blue-200 font-bold shadow-xs ring-2 ring-blue-500/30'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="font-black text-xs text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                      <span>➕ إضافة إلى الرصيد الحالي</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      زيادة الرصيد الحالي لكل صنف بمقدار محدد
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBatchMode('set')}
+                    className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                      batchMode === 'set'
+                        ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-600 text-purple-950 dark:text-purple-200 font-bold shadow-xs ring-2 ring-purple-500/30'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="font-black text-xs text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                      <span>⚙️ تعيين كمية موحدة (=)</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      ضبط رصيد كل صنف ليكون نفس هذا الرقم
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quantity Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+                  الكمية المراد تطبيقها على جميع الأصناف ({catalog.length} صنف):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    value={batchAmount}
+                    onChange={(e) => setBatchAmount(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="flex-1 text-base font-black bg-slate-50 dark:bg-slate-800 border-2 border-blue-500 rounded-xl px-4 py-2.5 text-slate-900 dark:text-white focus:outline-none"
+                  />
+                  <span className="text-xs font-bold text-slate-500 shrink-0">عبوة / كرتونة</span>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 mt-2.5">
+                  <span className="text-[11px] text-slate-400 font-bold ml-1">كميات سريعة:</span>
+                  {[20, 50, 100, 200, 500].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setBatchAmount(num)}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-bold border transition-colors cursor-pointer ${
+                        batchAmount === num
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      +{num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowBatchStockModal(false)}
+                  className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBatchStockSubmit}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <span>⚡</span>
+                  <span>
+                    تطبيق {batchMode === 'add' ? `إضافة (+${batchAmount})` : `تعيين (${batchAmount})`} على جميع الأصناف
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

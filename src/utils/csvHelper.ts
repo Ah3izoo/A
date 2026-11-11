@@ -1347,85 +1347,305 @@ export function copyForGoogleSheets(data: SalesRecord[]): Promise<boolean> {
   return navigator.clipboard.writeText(tsv).then(() => true).catch(() => false);
 }
 
+// ==========================================
+// Robust CSV & TSV Parser for Sales Invoices
+// ==========================================
+
 export function parseCSV(text: string): SalesRecord[] {
-  // Remove BOM if present
+  if (!text || !text.trim()) return [];
+
+  // Remove UTF-8 / UTF-16 BOM if present
   const cleaned = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
-  const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length < 2) return [];
+  const rawLines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (rawLines.length === 0) return [];
 
-  // Parse header
-  const headerLine = lines[0];
-  const headers = splitCSVLine(headerLine).map((h) => h.trim().toLowerCase());
+  // 1. Detect delimiter by sampling the first non-empty lines (checks ;, \t, ,)
+  const delimiter = detectCSVDelimiter(rawLines.slice(0, 15));
 
-  // Detect column indexes
-  const colDate = findColIndex(headers, ['date', 'التاريخ', 'تاريخ']);
-  const colRep = findColIndex(headers, ['sales rep', 'rep', 'المندوب', 'اسم المندوب']);
-  const colCustomer = findColIndex(headers, ['customer', 'customer name', 'العميل', 'اسم العميل']);
-  const colItem = findColIndex(headers, ['item', 'item name', 'product', 'الصنف', 'المنتج', 'اسم الصنف']);
-  const colGeneric = findColIndex(headers, ['generic', 'generic name', 'الاسم العلمي']);
-  const colCategory = findColIndex(headers, ['category', 'الفئة', 'التصنيف', 'القسم']);
-  const colQuantity = findColIndex(headers, ['quantity', 'qty', 'الكمية', 'الكمية المباعة']);
-  const colPrice = findColIndex(headers, ['unit price', 'w.price', 'price', 'سعر الوحدة', 'السعر']);
-  const colTotal = findColIndex(headers, ['total sales', 'total', 'amount', 'إجمالي المبيعات', 'الاجمالي', 'المبلغ']);
-  const colOrderId = findColIndex(headers, ['order id', 'order', 'invoice', 'رقم الفاتورة', 'رقم الطلب']);
+  // 2. Scan lines to find the true header row that contains sales/invoice columns
+  let headerIndex = -1;
+  let headers: string[] = [];
+  let colIndexes: ReturnType<typeof detectCSVColumns> = detectCSVColumns([]);
+
+  for (let i = 0; i < Math.min(rawLines.length, 40); i++) {
+    const line = rawLines[i];
+    // Skip banner lines or dividers
+    if (line.startsWith('===') || line.startsWith('---') || line.startsWith('###')) continue;
+
+    const cols = splitCSVLine(line, delimiter).map(cleanCSVHeader);
+    const detected = detectCSVColumns(cols);
+
+    // Count how many recognizable sales columns exist in this line
+    const matchCount = [
+      detected.colItem !== -1,
+      detected.colCustomer !== -1,
+      detected.colQuantity !== -1,
+      detected.colPrice !== -1 || detected.colTotal !== -1,
+      detected.colDate !== -1,
+      detected.colOrderId !== -1,
+    ].filter(Boolean).length;
+
+    // A valid sales header must match at least 2 distinct sales columns (e.g. Item and Qty/Price)
+    if (matchCount >= 2) {
+      headerIndex = i;
+      headers = cols;
+      colIndexes = detected;
+      break;
+    }
+  }
+
+  // Fallback: if no multi-match header found, try line 0
+  if (headerIndex === -1 && rawLines.length > 0) {
+    headerIndex = 0;
+    headers = splitCSVLine(rawLines[0], delimiter).map(cleanCSVHeader);
+    colIndexes = detectCSVColumns(headers);
+  }
 
   const records: SalesRecord[] = [];
+  const startIndex = headerIndex + 1;
 
-  for (let i = 1; i < lines.length; i++) {
-    const rawCols = splitCSVLine(lines[i]);
+  for (let i = startIndex; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    if (line.startsWith('===') || line.startsWith('---') || line.startsWith('###')) continue;
+
+    const rawCols = splitCSVLine(line, delimiter);
     if (rawCols.length < 2) continue;
 
-    const date = colDate !== -1 ? rawCols[colDate]?.trim() : new Date().toISOString().split('T')[0];
-    const rep = colRep !== -1 ? rawCols[colRep]?.trim() : DEFAULT_SALES_REP;
-    const customer = colCustomer !== -1 ? rawCols[colCustomer]?.trim() : 'صيدلية عامة';
-    const item = colItem !== -1 ? rawCols[colItem]?.trim() : 'صنف';
-    const generic = colGeneric !== -1 ? rawCols[colGeneric]?.trim() : '';
-    const category = colCategory !== -1 ? rawCols[colCategory]?.trim() : 'عام';
-    const qty = colQuantity !== -1 ? Math.max(1, parseFloat(rawCols[colQuantity]) || 1) : 1;
-    const price = colPrice !== -1 ? Math.max(0, parseFloat(rawCols[colPrice]) || 0) : 0;
-    
-    let total = colTotal !== -1 ? parseFloat(rawCols[colTotal]) : 0;
-    if (isNaN(total) || total <= 0) {
+    // Skip section headers in multi-table combined reports
+    if (rawCols.some((c) => c.includes('الجدول') || c.includes('لوحة المؤشرات') || c.includes('Executive KPI'))) {
+      continue;
+    }
+
+    const {
+      colDate,
+      colRep,
+      colCustomer,
+      colSegment,
+      colItem,
+      colGeneric,
+      colCategory,
+      colQuantity,
+      colPrice,
+      colTotal,
+      colOrderId,
+      colPayment,
+      colNotes,
+    } = colIndexes;
+
+    const rawItem = colItem !== -1 ? rawCols[colItem]?.trim() : '';
+    const rawCustomer = colCustomer !== -1 ? rawCols[colCustomer]?.trim() : '';
+
+    // If both item and customer are empty, skip row
+    if (!rawItem && !rawCustomer) continue;
+
+    // Check if this row is an accidental duplicate header row
+    if (rawItem === 'item' || rawItem === 'الصنف' || rawItem === 'اسم الصنف' || rawItem === 'product') {
+      continue;
+    }
+
+    const item = rawItem || 'صنف دوائي';
+    const generic = colGeneric !== -1 ? rawCols[colGeneric]?.trim() || '' : '';
+    const category = colCategory !== -1 ? rawCols[colCategory]?.trim() || 'عام' : 'عام';
+    const customer = rawCustomer || 'صيدلية عامة';
+    const segment = colSegment !== -1 && rawCols[colSegment]?.trim() ? (rawCols[colSegment].trim() as any) : undefined;
+    const rep = colRep !== -1 && rawCols[colRep]?.trim() ? rawCols[colRep].trim() : DEFAULT_SALES_REP;
+    const date = colDate !== -1 && rawCols[colDate]?.trim() ? normalizeCSVDate(rawCols[colDate].trim()) : new Date().toISOString().split('T')[0];
+
+    const qty = colQuantity !== -1 ? parseCSVNumeric(rawCols[colQuantity], 1) : 1;
+    const price = colPrice !== -1 ? parseCSVNumeric(rawCols[colPrice], 0) : 0;
+
+    let total = colTotal !== -1 ? parseCSVNumeric(rawCols[colTotal], 0) : 0;
+    if (total <= 0) {
       total = qty * price;
     }
 
-    const orderId = colOrderId !== -1 && rawCols[colOrderId] ? rawCols[colOrderId].trim() : `INV-${1000 + i}`;
+    const orderId = colOrderId !== -1 && rawCols[colOrderId]?.trim()
+      ? rawCols[colOrderId].trim()
+      : `INV-${1000 + i}`;
+
+    const paymentType = colPayment !== -1 ? rawCols[colPayment]?.trim() : undefined;
+    const notes = colNotes !== -1 ? rawCols[colNotes]?.trim() : undefined;
 
     records.push({
-      id: `imported-${Date.now()}-${i}`,
+      id: `imported-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
       orderId,
       date,
-      salesRep: rep || DEFAULT_SALES_REP,
-      customerName: customer || 'صيدلية عامة',
-      category: category || 'عام',
-      itemName: item || 'صنف',
+      salesRep: rep,
+      customerName: customer,
+      customerSegment: segment,
+      category,
+      itemName: item,
       genericName: generic,
-      quantity: qty,
-      unitPrice: price,
-      totalSales: total,
+      quantity: Math.max(1, qty),
+      unitPrice: Math.max(0, price),
+      totalSales: total > 0 ? total : qty * price,
+      paymentType,
+      notes,
     });
   }
 
   return records;
 }
 
+function cleanCSVHeader(h: string): string {
+  return h.replace(/["']/g, '').trim().toLowerCase();
+}
+
+function detectCSVDelimiter(sampleLines: string[]): string {
+  let commaCount = 0;
+  let semiCount = 0;
+  let tabCount = 0;
+
+  for (const line of sampleLines) {
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQuotes = !inQuotes;
+      else if (!inQuotes) {
+        if (c === ',') commaCount++;
+        else if (c === ';') semiCount++;
+        else if (c === '\t') tabCount++;
+      }
+    }
+  }
+
+  // Semicolon is heavily used by Excel in Arabic and European Windows locales
+  if (semiCount > commaCount && semiCount > tabCount) return ';';
+  if (tabCount > commaCount && tabCount > semiCount) return '\t';
+  return ',';
+}
+
+function detectCSVColumns(headers: string[]) {
+  return {
+    colOrderId: findColIndex(headers, [
+      'order id', 'order_id', 'orderid', 'order', 'invoice id', 'invoice_id', 'invoice no', 'invoice_no',
+      'invoice', 'inv', 'رقم الفاتورة', 'رقم الطلب', 'رقم الطلبية', 'رقم الفاتورة / الطلبية', 'الفاتورة', 'كود الفاتورة', 'معرف الفاتورة'
+    ]),
+    colDate: findColIndex(headers, [
+      'date', 'invoice date', 'order date', 'sale date', 'تاريخ', 'التاريخ', 'تاريخ الفاتورة', 'تاريخ الطلب', 'تاريخ العملية', 'تاريخ البيع'
+    ]),
+    colRep: findColIndex(headers, [
+      'sales rep', 'sales_rep', 'salesrep', 'rep', 'medical rep', 'مندوب', 'المندوب', 'اسم المندوب', 'مندوب المبيعات', 'المندوب الطبي', 'مسؤول المبيعات'
+    ]),
+    colCustomer: findColIndex(headers, [
+      'customer name', 'customer_name', 'customer', 'pharmacy', 'client', 'hospital',
+      'اسم العميل', 'العميل', 'اسم الصيدلية', 'الصيدلية', 'العميل / الصيدلية', 'اسم العميل / الصيدلية', 'المستشفى', 'الزبون', 'اسم الزبون', 'الجهة'
+    ]),
+    colSegment: findColIndex(headers, [
+      'customer segment', 'segment', 'تصنيف العميل', 'شريحة العميل', 'الشريحة', 'تصنيف وشريحة', 'تصنيف العميل / الشريحة'
+    ]),
+    colItem: findColIndex(headers, [
+      'item name', 'item_name', 'product name', 'product_name', 'item', 'product', 'drug', 'medicine', 'description',
+      'اسم الصنف', 'الصنف', 'اسم المنتج', 'المنتج', 'اسم الدواء', 'الدواء', 'اسم المستحضر', 'المستحضر', 'الصنف الدوائي', 'اسم الصنف الدوائي', 'البيان'
+    ]),
+    colGeneric: findColIndex(headers, [
+      'generic name', 'generic_name', 'generic', 'formulation', 'الاسم العلمي', 'الاسم العلمي والتركيبة', 'التركيبة', 'المادة الفعالة'
+    ]),
+    colCategory: findColIndex(headers, [
+      'category', 'therapeutic category', 'التصنيف', 'الفئة', 'القسم', 'التصنيف العلاجي', 'المجموعة العلاجية'
+    ]),
+    colQuantity: findColIndex(headers, [
+      'quantity', 'qty', 'units', 'count', 'الكمية المباعة', 'الكمية', 'العدد', 'عدد العبوات', 'العبوات', 'الكمية المباعة (عبوة)', 'الكميات'
+    ]),
+    colPrice: findColIndex(headers, [
+      'unit price', 'unit_price', 'unitprice', 'w.price', 'w_price', 'price',
+      'سعر الوحدة', 'السعر', 'سعر العبوة', 'سعر البيع', 'سعر الصنف', 'سعر الجملة'
+    ]),
+    colTotal: findColIndex(headers, [
+      'total sales', 'total_sales', 'totalsales', 'total amount', 'total', 'amount',
+      'إجمالي المبيعات', 'الاجمالي', 'الإجمالي', 'المبلغ', 'القيمة', 'إجمالي القيمة', 'إجمالي القيمة (sum sales)', 'صافي الفاتورة', 'المجموع'
+    ]),
+    colPayment: findColIndex(headers, [
+      'payment type', 'payment_type', 'payment', 'طريقة السداد', 'شروط السداد', 'السداد', 'الدفع'
+    ]),
+    colNotes: findColIndex(headers, [
+      'notes', 'note', 'الملاحظات', 'ملاحظات', 'الملاحظات وحالة الفاتورة'
+    ]),
+  };
+}
+
 function findColIndex(headers: string[], aliases: string[]): number {
+  // 1. Exact match check
   for (let i = 0; i < headers.length; i++) {
     const h = headers[i].replace(/["']/g, '').trim().toLowerCase();
     for (const alias of aliases) {
-      if (h === alias || h.includes(alias)) return i;
+      if (h === alias) return i;
+    }
+  }
+  // 2. Substring match check
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i].replace(/["']/g, '').trim().toLowerCase();
+    for (const alias of aliases) {
+      if (h.includes(alias) || alias.includes(h)) return i;
     }
   }
   return -1;
 }
 
-function splitCSVLine(line: string): string[] {
+export function parseCSVNumeric(val: any, fallback: number = 0): number {
+  if (val === undefined || val === null) return fallback;
+  if (typeof val === 'number') return isNaN(val) ? fallback : val;
+
+  let str = String(val).trim();
+  if (!str) return fallback;
+
+  // Convert Eastern Arabic numerals (٠-٩) to Latin (0-9)
+  const easternDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  for (let i = 0; i < 10; i++) {
+    str = str.split(easternDigits[i]).join(String(i));
+  }
+
+  // Remove currency signs, letters, and spaces
+  str = str.replace(/[^\d.,\-+]/g, '');
+
+  // Handle thousand separators: "15,000.00" vs "15.000,00"
+  if (str.includes(',') && str.includes('.')) {
+    if (str.lastIndexOf(',') > str.lastIndexOf('.')) {
+      // European 15.000,00 -> 15000.00
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // US 15,000.00 -> 15000.00
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    const parts = str.split(',');
+    if (parts.length === 2 && parts[1].length !== 3) {
+      // Decimal comma: e.g. "15,5"
+      str = str.replace(',', '.');
+    } else {
+      // Thousand comma: e.g. "15,000"
+      str = str.replace(/,/g, '');
+    }
+  }
+
+  const num = parseFloat(str);
+  return isNaN(num) ? fallback : num;
+}
+
+function normalizeCSVDate(raw: string): string {
+  if (!raw) return new Date().toISOString().split('T')[0];
+  const s = raw.trim().replace(/\//g, '-');
+  const parts = s.split('-');
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      // YYYY-MM-DD
+      const mm = parts[1].padStart(2, '0');
+      const dd = parts[2].padStart(2, '0');
+      return `${parts[0]}-${mm}-${dd}`;
+    } else if (parts[2].length === 4) {
+      // DD-MM-YYYY
+      const dd = parts[0].padStart(2, '0');
+      const mm = parts[1].padStart(2, '0');
+      return `${parts[2]}-${mm}-${dd}`;
+    }
+  }
+  return s;
+}
+
+export function splitCSVLine(line: string, delimiter: string = ','): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
-
-  // Check if comma or tab separated
-  const delimiter = line.includes('\t') && !line.includes(',') ? '\t' : ',';
 
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
@@ -1446,3 +1666,4 @@ function splitCSVLine(line: string): string[] {
   result.push(current.trim());
   return result;
 }
+

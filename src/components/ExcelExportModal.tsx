@@ -37,8 +37,10 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
   // 1. Report Dimension Mode: detailed | byCustomer | byItem | allReports
   const [reportMode, setReportMode] = useState<ReportDimensionMode>(initialReportMode);
 
-  // 2. Scope selection
-  const [scope, setScope] = useState<'filtered' | 'all' | 'customer'>('filtered');
+  // 2. Scope selection: filtered | daily | specificDate | all | customer
+  const [scope, setScope] = useState<'filtered' | 'daily' | 'specificDate' | 'all' | 'customer'>('filtered');
+  const todayDateStr = new Date().toISOString().split('T')[0];
+  const [targetDate, setTargetDate] = useState<string>(todayDateStr);
   const [targetCustomer, setTargetCustomer] = useState<string>('');
 
   // 3. Field selection state per mode
@@ -76,12 +78,21 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
 
   // Compute active dataset to export
   const dataset = useMemo(() => {
+    if (scope === 'daily') {
+      return allRecords.filter((r) => r.date === todayDateStr);
+    }
+    if (scope === 'specificDate' && targetDate) {
+      return allRecords.filter((r) => r.date === targetDate);
+    }
     if (scope === 'all') return allRecords;
     if (scope === 'customer' && targetCustomer) {
       return allRecords.filter((r) => r.customerName === targetCustomer);
     }
     return filteredRecords;
-  }, [scope, targetCustomer, allRecords, filteredRecords]);
+  }, [scope, targetDate, targetCustomer, allRecords, filteredRecords, todayDateStr]);
+
+  const dailyCount = useMemo(() => allRecords.filter((r) => r.date === todayDateStr).length, [allRecords, todayDateStr]);
+  const specificDateCount = useMemo(() => allRecords.filter((r) => r.date === targetDate).length, [allRecords, targetDate]);
 
   // Aggregated data for customer and item modes
   const customerSummaries = useMemo(() => aggregateCustomerSummaries(dataset), [dataset]);
@@ -520,41 +531,94 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
             <label className="block text-xs font-black text-slate-800 dark:text-white mb-2">
               {reportMode === 'allReports' ? '2. نطاق البيانات المشمولة:' : '3. نطاق وفلترة البيانات المصدرة:'}
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {/* Option 1: Daily Report (Today) */}
               <button
                 type="button"
-                onClick={() => setScope('filtered')}
-                className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
-                  scope === 'filtered'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-bold shadow-xs'
+                onClick={() => setScope('daily')}
+                className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                  scope === 'daily'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-500 text-emerald-950 dark:text-emerald-100 font-bold shadow-xs ring-2 ring-emerald-500/30'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-black text-xs text-emerald-700 dark:text-emerald-300">
+                  <span>📅</span>
+                  <span>تقرير مبيعات يومي (اليوم)</span>
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  تاريخ اليوم: {todayDateStr} ({dailyCount} عملية)
+                </div>
+              </button>
+
+              {/* Option 2: Specific Date Report */}
+              <div
+                className={`p-3 rounded-xl border text-right transition-all ${
+                  scope === 'specificDate'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-500 text-emerald-950 dark:text-emerald-100 font-bold shadow-xs ring-2 ring-emerald-500/30'
                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                 }`}
               >
+                <div
+                  className="flex items-center gap-1.5 font-black text-xs cursor-pointer text-blue-700 dark:text-blue-300"
+                  onClick={() => setScope('specificDate')}
+                >
+                  <span>📆</span>
+                  <span>تقرير بتاريخ معين (اختر اليوم)</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={targetDate}
+                    onChange={(e) => {
+                      setTargetDate(e.target.value);
+                      setScope('specificDate');
+                    }}
+                    className="w-full text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1 text-slate-900 dark:text-white focus:outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 shrink-0 font-bold">
+                    {specificDateCount} سجل
+                  </span>
+                </div>
+              </div>
+
+              {/* Option 3: Filtered Records */}
+              <button
+                type="button"
+                onClick={() => setScope('filtered')}
+                className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                  scope === 'filtered'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-500 text-emerald-950 dark:text-emerald-100 font-bold shadow-xs ring-2 ring-emerald-500/30'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                }`}
+              >
                 <div className="font-black text-xs">السجلات المصفاة حالياً</div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   وفق فلاتر الشاشة ({filteredRecords.length} سجل)
                 </div>
               </button>
 
+              {/* Option 4: All Records */}
               <button
                 type="button"
                 onClick={() => setScope('all')}
-                className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
+                className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
                   scope === 'all'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-bold shadow-xs'
-                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-500 text-emerald-950 dark:text-emerald-100 font-bold shadow-xs ring-2 ring-emerald-500/30'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
                 }`}
               >
                 <div className="font-black text-xs">كافة السجلات المخزنة</div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   كل الفواتير ({allRecords.length} سجل)
                 </div>
               </button>
 
+              {/* Option 5: Specific Customer */}
               <div
-                className={`p-2.5 rounded-xl border text-right transition-all ${
+                className={`p-3 rounded-xl border text-right transition-all ${
                   scope === 'customer'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 shadow-xs'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-500 shadow-xs ring-2 ring-emerald-500/30'
                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                 }`}
               >
@@ -562,7 +626,7 @@ export const ExcelExportModal: React.FC<ExcelExportModalProps> = ({
                   className="font-black text-xs cursor-pointer text-slate-800 dark:text-white"
                   onClick={() => setScope('customer')}
                 >
-                  عميل محدد فقط
+                  عميل أو صيدلية محددة
                 </div>
                 <select
                   value={targetCustomer}

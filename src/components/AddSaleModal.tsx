@@ -72,12 +72,24 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
   const [orderId, setOrderId] = useState(() => `INV-${Date.now().toString().slice(-5)}`);
   const [date, setDate] = useState(today);
   const [customerName, setCustomerName] = useState('');
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const customerInputRef = React.useRef<HTMLInputElement>(null);
   const [customerSegment, setCustomerSegment] = useState<string>('صيدليات مجتمعية');
   const [salesRep, setSalesRep] = useState(activeSalesRep || DEFAULT_SALES_REP);
   const [paymentType, setPaymentType] = useState<string>('نقدي / تسليم فوري');
   const [customPayment, setCustomPayment] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+
+  // Filtered customer suggestions
+  const customerSuggestions = React.useMemo(() => {
+    if (!existingCustomers || existingCustomers.length === 0) return [];
+    const query = customerName.trim().toLowerCase();
+    if (!query) return existingCustomers.slice(0, 12);
+    return existingCustomers
+      .filter((c) => c.toLowerCase().includes(query))
+      .slice(0, 12);
+  }, [existingCustomers, customerName]);
 
   // Synchronize default sales rep when opening or switching rep
   React.useEffect(() => {
@@ -88,6 +100,15 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
 
   // Multi-item state
   const [items, setItems] = useState<InvoiceItemEntry[]>([createDefaultItem(0)]);
+
+  // Active search row id: which row is currently searching for a product
+  const [activeSearchRowId, setActiveSearchRowId] = useState<string | null>(null);
+  const [rowSearchQuery, setRowSearchQuery] = useState('');
+  const [rowShowAll, setRowShowAll] = useState(false);
+
+  // Quick-add search bar state
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+  const [quickSearchShowAll, setQuickSearchShowAll] = useState(false);
 
   // Pre-calculate sold quantities from existing invoices
   const soldQuantityMap = React.useMemo(() => {
@@ -109,16 +130,30 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle adding a new item line
-  const handleAddItem = () => {
-    // Pick the next product from catalog that isn't already added, or default
+  // Search filter helper: only returns products if query is typed OR if user explicitly clicked "عرض كل الأصناف"
+  const filterProductsForSearch = (query: string, allowAll: boolean) => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return allowAll ? catalog : [];
+    }
+    return catalog.filter((p) => {
+      const name = (p.productName || '').toLowerCase();
+      const generic = (p.genericName || '').toLowerCase();
+      const cat = (p.category || '').toLowerCase();
+      return name.includes(q) || generic.includes(q) || cat.includes(q);
+    });
+  };
+
+  // Handle adding a new item line (auto opens search for this new item so user doesn't scroll)
+  const handleAddItem = (autoOpenSearch = true) => {
     const existingProductIds = new Set(items.map((it) => it.productId));
     const nextProduct = catalog.find((p) => !existingProductIds.has(p.id)) || catalog[0] || firstProduct;
+    const newItemId = `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
     setItems((prev) => [
       ...prev,
       {
-        id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: newItemId,
         productId: nextProduct.id,
         itemName: nextProduct.productName,
         genericName: nextProduct.genericName,
@@ -127,6 +162,53 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
         unitPrice: nextProduct.currentPrice,
       },
     ]);
+
+    if (autoOpenSearch) {
+      setActiveSearchRowId(newItemId);
+      setRowSearchQuery('');
+      setRowShowAll(false);
+    }
+  };
+
+  // Quick add product directly from search
+  const handleQuickAddProduct = (prod: ProductItem) => {
+    const newItemId = `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setItems((prev) => [
+      ...prev,
+      {
+        id: newItemId,
+        productId: prod.id,
+        itemName: prod.productName,
+        genericName: prod.genericName,
+        category: prod.category,
+        quantity: 10,
+        unitPrice: prod.currentPrice,
+      },
+    ]);
+    setQuickSearchQuery('');
+    setQuickSearchShowAll(false);
+  };
+
+  // Handle selecting a product from search for an existing row
+  const handleSelectProduct = (itemId: string, prod: ProductItem) => {
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id === itemId) {
+          return {
+            ...it,
+            productId: prod.id,
+            itemName: prod.productName,
+            genericName: prod.genericName,
+            category: prod.category,
+            unitPrice: prod.currentPrice,
+          };
+        }
+        return it;
+      })
+    );
+    setActiveSearchRowId(null);
+    setRowSearchQuery('');
+    setRowShowAll(false);
   };
 
   // Handle removing an item line
@@ -343,28 +425,105 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
                 />
               </div>
 
-              {/* Customer Name */}
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                  اسم العميل أو الصيدلية (Customer Name) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  list="customer-suggestions"
-                  value={customerName}
-                  onChange={(e) => {
-                    setCustomerName(e.target.value);
-                    if (error) setError('');
-                  }}
-                  placeholder="اكتب اسم الصيدلية أو المستشفى أو العميل..."
-                  className="w-full text-xs sm:text-sm font-bold bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-600"
-                />
-                <datalist id="customer-suggestions">
-                  {existingCustomers.map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
+              {/* Customer Name - Completely unblocked typing + custom suggestion dropdown */}
+              <div className="sm:col-span-2 relative">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                    اسم العميل أو الصيدلية (Customer Name) *
+                  </label>
+                  {existingCustomers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomerSuggestions((v) => !v)}
+                      className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>🏥 الصيدليات السابقة ({existingCustomers.length})</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    ref={customerInputRef}
+                    type="text"
+                    required
+                    autoComplete="off"
+                    value={customerName}
+                    onChange={(e) => {
+                      setCustomerName(e.target.value);
+                      if (!showCustomerSuggestions && existingCustomers.length > 0) {
+                        setShowCustomerSuggestions(true);
+                      }
+                      if (error) setError('');
+                    }}
+                    onFocus={() => {
+                      if (existingCustomers.length > 0) {
+                        setShowCustomerSuggestions(true);
+                      }
+                    }}
+                    placeholder="اكتب اسم الصيدلية أو المستشفى بحرية تامة..."
+                    className="w-full text-xs sm:text-sm font-bold bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 pl-8 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-600"
+                  />
+                  {customerName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerName('');
+                        setShowCustomerSuggestions(true);
+                        customerInputRef.current?.focus();
+                      }}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold p-1 cursor-pointer"
+                      title="مسح اسم الصيدلية"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Floating Suggestions Dropdown */}
+                {showCustomerSuggestions && existingCustomers.length > 0 && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setShowCustomerSuggestions(false)}
+                    />
+                    <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white dark:bg-slate-800 border-2 border-blue-400 dark:border-blue-600 rounded-xl shadow-xl max-h-52 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-100">
+                      <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/80 text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                        <span>اختر من الصيدليات السابقة أو واصل الكتابة:</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomerSuggestions(false)}
+                          className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                        >
+                          إغلاق ✕
+                        </button>
+                      </div>
+                      {customerSuggestions.length > 0 ? (
+                        customerSuggestions.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              setCustomerName(c);
+                              setShowCustomerSuggestions(false);
+                            }}
+                            className="w-full text-right px-3.5 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 hover:bg-blue-50 dark:hover:bg-slate-700/80 transition-colors flex items-center justify-between cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <span>🏥</span>
+                              <span>{c}</span>
+                            </span>
+                            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">اختيار</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                          لا توجد صيدلية سابقة بهذا الاسم — كتابة "{customerName}" كصيدلية جديدة.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Customer Segment */}
@@ -430,9 +589,9 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Multiple Items in this Invoice */}
+          {/* Section 2: Multiple Items in this Invoice with Search-Only Selection */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between pb-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-1 gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-black text-slate-900 dark:text-white">
                   💊 الأصناف والكميات في هذه الفاتورة ({items.length} صنف)
@@ -445,23 +604,123 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
               {/* Add Item Button */}
               <button
                 type="button"
-                onClick={handleAddItem}
-                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                onClick={() => handleAddItem(true)}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all self-start sm:self-auto"
               >
                 <span>➕</span>
                 <span>إضافة صنف آخر للفاتورة</span>
               </button>
             </div>
 
+            {/* Quick-Search Direct Add Bar */}
+            <div className="p-3 bg-blue-50/80 dark:bg-slate-800/80 rounded-xl border-2 border-blue-200 dark:border-slate-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+                  <span>⚡</span>
+                  <span>بحث سريع لإضافة صنف مباشر للفاتورة (دون الحاجة لتصفح كل الأصناف):</span>
+                </label>
+                {!quickSearchShowAll ? (
+                  <button
+                    type="button"
+                    onClick={() => setQuickSearchShowAll(true)}
+                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    📋 عرض كافة الأصناف ({catalog.length})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setQuickSearchShowAll(false)}
+                    className="text-[11px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 cursor-pointer"
+                  >
+                    إخفاء القائمة الكاملة ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  value={quickSearchQuery}
+                  onChange={(e) => setQuickSearchQuery(e.target.value)}
+                  placeholder="🔍 اكتب اسم الصنف الدوائي أو التركيبة للبحث الفوري (مثال: Acretin أو Panadol أو قطرة)..."
+                  className="w-full text-xs sm:text-sm font-bold bg-white dark:bg-slate-900 border-2 border-blue-300 dark:border-blue-600 rounded-lg px-3 py-2 pl-8 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-600 shadow-2xs"
+                />
+                {quickSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickSearchQuery('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold p-1 cursor-pointer"
+                    title="مسح البحث"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Search Results - Only shows if query is typed or if showAll is true */}
+              {(quickSearchQuery.trim().length > 0 || quickSearchShowAll) && (
+                <div className="bg-white dark:bg-slate-900 rounded-lg border-2 border-blue-400 dark:border-blue-600 shadow-lg max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in duration-100">
+                  {(() => {
+                    const results = filterProductsForSearch(quickSearchQuery, quickSearchShowAll);
+                    if (results.length === 0) {
+                      return (
+                        <div className="p-3 text-center text-xs text-slate-500 dark:text-slate-400">
+                          لا يوجد صنف يطابق "{quickSearchQuery}".
+                        </div>
+                      );
+                    }
+                    return results.slice(0, quickSearchShowAll ? 150 : 20).map((prod) => {
+                      const pSold = soldQuantityMap.get(prod.productName.trim().toLowerCase()) || 0;
+                      const pRemain = (prod.warehouseStock ?? 100) - pSold;
+                      return (
+                        <div
+                          key={prod.id}
+                          className="p-2.5 hover:bg-blue-50 dark:hover:bg-slate-800/80 flex items-center justify-between gap-2 text-xs transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-900 dark:text-white truncate">
+                              {prod.productName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                              {prod.genericName && <span>{prod.genericName}</span>}
+                              <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded text-[10px]">
+                                {prod.category}
+                              </span>
+                              <span className={pRemain <= 0 ? 'text-rose-600 font-bold' : 'text-emerald-600'}>
+                                متبقي: {pRemain} عبوة
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                              {formatNumber(prod.currentPrice)} {currency}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickAddProduct(prod)}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-md text-xs cursor-pointer active:scale-95 transition-all shadow-2xs"
+                            >
+                              + إضافة للفاتورة
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+
             {/* List of item rows */}
             <div className="space-y-3">
               {items.map((item, index) => {
                 const itemTotal = item.quantity * item.unitPrice;
-
                 const { totalStock, sold, remaining } = getItemStockInfo(item.productId, item.itemName);
                 const isOutOfStock = remaining <= 0;
                 const isLowStock = remaining > 0 && remaining <= 10;
                 const isOverRequested = item.quantity > remaining && remaining > 0;
+                const isRowSearching = activeSearchRowId === item.id;
 
                 return (
                   <div
@@ -521,81 +780,209 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                      {/* Product Selector */}
-                      <div className="sm:col-span-6">
-                        <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                          الصنف الدوائي (Jamjoom Pharma Catalog) *
-                        </label>
-                        <select
-                          value={item.productId}
-                          onChange={(e) => handleProductChange(item.id, e.target.value)}
-                          className="w-full text-xs sm:text-sm font-bold bg-slate-50 dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-600 cursor-pointer"
-                        >
-                          {catalog.map((p) => {
-                            const pSold = soldQuantityMap.get(p.productName.trim().toLowerCase()) || 0;
-                            const pRemain = (p.warehouseStock ?? 100) - pSold;
-                            return (
-                              <option
-                                key={p.id}
-                                value={p.id}
-                                className="dark:bg-slate-900 text-slate-900 dark:text-white"
-                              >
-                                {p.productName} — [متبقي: {pRemain}] — {formatNumber(p.currentPrice)} {currency}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-
-                      {/* Quantity */}
-                      <div className="sm:col-span-3">
-                        <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                          الكمية بالعبوة (Quantity) *
-                        </label>
-                        <div className="flex items-center">
+                    {/* Interactive Product Search Selector Panel */}
+                    {isRowSearching ? (
+                      <div className="p-3 bg-blue-50/90 dark:bg-slate-900/90 rounded-xl border-2 border-blue-500 dark:border-blue-500 space-y-2.5 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs">
+                              🔍
+                            </span>
+                            <span className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                              البحث عن الصنف الدوائي بالاسم أو التركيبة:
+                            </span>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                            className="w-8 h-9 rounded-r-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-bold flex items-center justify-center cursor-pointer border-y-2 border-r-2 border-slate-300 dark:border-slate-600"
+                            onClick={() => {
+                              setActiveSearchRowId(null);
+                              setRowSearchQuery('');
+                              setRowShowAll(false);
+                            }}
+                            className="text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white px-2 py-0.5 rounded cursor-pointer"
                           >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            required
-                            value={item.quantity}
-                            onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value))}
-                            className="w-full text-center text-xs sm:text-sm font-black font-mono bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 py-1.5 text-slate-900 dark:text-white focus:outline-none focus:border-blue-600 tabular-numbers"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                            className="w-8 h-9 rounded-l-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-bold flex items-center justify-center cursor-pointer border-y-2 border-l-2 border-slate-300 dark:border-slate-600"
-                          >
-                            +
+                            ✕ إلغاء
                           </button>
                         </div>
-                      </div>
 
-                      {/* Unit Price (Locked to Manager Price List) */}
-                      <div className="sm:col-span-3">
-                        <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center justify-between">
-                          <span>سعر العبوة ({currency}) *</span>
-                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">🔒 معتمد</span>
-                        </label>
-                        <input
-                          type="number"
-                          readOnly
-                          required
-                          value={item.unitPrice}
-                          title="السعر معتمد من قائمة أسعار المدير (تغيير الأسعار مقتصر على المدير فقط)"
-                          className="w-full text-left text-xs sm:text-sm font-black font-mono bg-slate-100 dark:bg-slate-800/80 border-2 border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 cursor-not-allowed tabular-numbers"
-                        />
+                        {/* Search Input Bar */}
+                        <div className="relative">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={rowSearchQuery}
+                            onChange={(e) => setRowSearchQuery(e.target.value)}
+                            placeholder="اكتب اسم الدواء أو التركيبة (مثال: Acretin, Panadol, Omeprazole)..."
+                            className="w-full text-xs sm:text-sm font-bold bg-white dark:bg-slate-800 border-2 border-blue-400 dark:border-blue-500 rounded-lg px-3 py-2 pl-8 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          {rowSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setRowSearchQuery('')}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold p-1 cursor-pointer"
+                              title="مسح البحث"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Search guidance and 'Show all items' button */}
+                        {!rowSearchQuery.trim() && !rowShowAll ? (
+                          <div className="p-3 bg-white/80 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 text-center space-y-2">
+                            <p className="text-xs text-slate-600 dark:text-slate-300">
+                              💡 اكتب حرفين أو أكثر للبحث الفوري دون الحاجة للمرور بكل الأصناف.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setRowShowAll(true)}
+                              className="px-3 py-1.5 bg-blue-100 dark:bg-blue-900/60 hover:bg-blue-200 text-blue-800 dark:text-blue-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                            >
+                              📋 عرض كافة الأصناف ({catalog.length} صنف)
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 shadow-sm">
+                            <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                              <span>نتائج البحث المباشر:</span>
+                              {rowShowAll && (
+                                <button
+                                  type="button"
+                                  onClick={() => setRowShowAll(false)}
+                                  className="text-blue-600 dark:text-blue-400 cursor-pointer"
+                                >
+                                  إخفاء القائمة ✕
+                                </button>
+                              )}
+                            </div>
+                            {(() => {
+                              const matches = filterProductsForSearch(rowSearchQuery, rowShowAll);
+                              if (matches.length === 0) {
+                                return (
+                                  <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                                    لا يوجد صنف يطابق "{rowSearchQuery}". جرب البحث باسم التركيبة أو جزء من الاسم.
+                                  </div>
+                                );
+                              }
+                              return matches.slice(0, rowShowAll ? 150 : 25).map((p) => {
+                                const pSold = soldQuantityMap.get(p.productName.trim().toLowerCase()) || 0;
+                                const pRemain = (p.warehouseStock ?? 100) - pSold;
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => handleSelectProduct(item.id, p)}
+                                    className="w-full text-right p-2.5 hover:bg-blue-50 dark:hover:bg-slate-700/80 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-xs text-slate-900 dark:text-white">
+                                        {p.productName}
+                                      </div>
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                                        {p.genericName && <span>{p.genericName}</span>}
+                                        <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.2 rounded text-[10px]">
+                                          {p.category}
+                                        </span>
+                                        <span className={pRemain <= 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>
+                                          متبقي: {pRemain} عبوة
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="font-mono font-bold text-xs text-slate-800 dark:text-slate-200">
+                                        {formatNumber(p.currentPrice)} {currency}
+                                      </span>
+                                      <span className="px-2.5 py-1 bg-blue-600 text-white rounded text-[11px] font-bold">
+                                        اختيار ✓
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              });
+                            })()}
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    ) : (
+                      /* Display Selected Medicine with Search Button */
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                        {/* Selected Product Card + Search Button */}
+                        <div className="sm:col-span-6">
+                          <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center justify-between">
+                            <span>الصنف الدوائي المحدد *</span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                              (استخدم زر البحث للتغيير)
+                            </span>
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-slate-50 dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                              {item.itemName}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveSearchRowId(item.id);
+                                setRowSearchQuery('');
+                                setRowShowAll(false);
+                              }}
+                              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer shrink-0 transition-transform active:scale-95"
+                              title="اضغط للبحث عن صنف آخر بالاسم"
+                            >
+                              <span>🔍</span>
+                              <span>زر البحث</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Quantity */}
+                        <div className="sm:col-span-3">
+                          <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
+                            الكمية بالعبوة (Quantity) *
+                          </label>
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                              className="w-8 h-9 rounded-r-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-bold flex items-center justify-center cursor-pointer border-y-2 border-r-2 border-slate-300 dark:border-slate-600"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              required
+                              value={item.quantity}
+                              onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value))}
+                              className="w-full text-center text-xs sm:text-sm font-black font-mono bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 py-1.5 text-slate-900 dark:text-white focus:outline-none focus:border-blue-600 tabular-numbers"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                              className="w-8 h-9 rounded-l-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-bold flex items-center justify-center cursor-pointer border-y-2 border-l-2 border-slate-300 dark:border-slate-600"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Unit Price (Locked to Manager Price List) */}
+                        <div className="sm:col-span-3">
+                          <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center justify-between">
+                            <span>سعر العبوة ({currency}) *</span>
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">🔒 معتمد</span>
+                          </label>
+                          <input
+                            type="number"
+                            readOnly
+                            required
+                            value={item.unitPrice}
+                            title="السعر معتمد من قائمة أسعار المدير (تغيير الأسعار مقتصر على المدير فقط)"
+                            className="w-full text-left text-xs sm:text-sm font-black font-mono bg-slate-100 dark:bg-slate-800/80 border-2 border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-slate-800 dark:text-slate-200 cursor-not-allowed tabular-numbers"
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Stock Alert Warning if order quantity exceeds warehouse remaining */}
                     {isOverRequested && (
@@ -633,7 +1020,7 @@ export const AddSaleModal: React.FC<AddSaleModalProps> = ({
             {/* Quick Add Button below items list */}
             <button
               type="button"
-              onClick={handleAddItem}
+              onClick={() => handleAddItem(true)}
               className="w-full py-2.5 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-800 hover:border-blue-500 bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-bold text-xs sm:text-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
               <span>➕</span>

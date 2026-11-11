@@ -62,6 +62,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--theme-ring)] focus:border-[var(--theme-primary)] cursor-pointer transition-all"
             >
               <option value="all" className="dark:bg-slate-800">جميع الفترات (All Time)</option>
+              <option value="today" className="dark:bg-slate-800">اليوم (Today / تقرير يومي)</option>
               <option value="thisWeek" className="dark:bg-slate-800">هذا الأسبوع (Current Week)</option>
               <option value="7days" className="dark:bg-slate-800">آخر 7 أيام (Last 7 Days)</option>
               <option value="30days" className="dark:bg-slate-800">آخر 30 يوماً (Last 30 Days)</option>
@@ -274,6 +275,19 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 shrink-0">اختصار:</span>
           <button
             type="button"
+            onClick={() => setFilters((p) => ({ ...p, dateRange: 'today' }))}
+            className={`px-2.5 py-1 text-[11px] rounded-lg font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
+              filters.dateRange === 'today'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+            style={filters.dateRange === 'today' ? { backgroundColor: 'var(--theme-primary)' } : {}}
+            title="تصفية فواتير اليوم فقط (تقرير يومي)"
+          >
+            <span>📅 اليوم</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setFilters((p) => ({ ...p, dateRange: 'thisWeek' }))}
             className={`px-2.5 py-1 text-[11px] rounded-lg font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1 ${
               filters.dateRange === 'thisWeek'
@@ -283,7 +297,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             style={filters.dateRange === 'thisWeek' ? { backgroundColor: 'var(--theme-primary)' } : {}}
             title="تصفية فواتير هذا الأسبوع لمتابعة أداء المندوب"
           >
-            <span>📅 هذا الأسبوع</span>
+            <span>هذا الأسبوع</span>
           </button>
           <button
             type="button"

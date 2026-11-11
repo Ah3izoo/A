@@ -33,14 +33,28 @@ export const AndroidBottomBar: React.FC<AndroidBottomBarProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('invoices')}
-            className={`flex flex-col items-center justify-center py-1 px-1.5 rounded-2xl transition-all cursor-pointer active:scale-95 ${
+            className={`flex flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all cursor-pointer active:scale-95 ${
               activeTab === 'invoices'
                 ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-black shadow-xs ring-1 ring-blue-500/20'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800/50'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
             }`}
           >
-            <span className="text-lg leading-none">🧾</span>
-            <span className="text-[10px] mt-0.5 tracking-tight font-bold">الفواتير</span>
+            <span className="text-base leading-none">🧾</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-bold">الفواتير</span>
+          </button>
+
+          {/* 2. Kambal Orders Tab */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('kambalOrders')}
+            className={`flex flex-col items-center justify-center py-1 px-1 rounded-2xl transition-all cursor-pointer active:scale-95 ${
+              activeTab === 'kambalOrders'
+                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-black shadow-xs ring-1 ring-blue-500/20'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+            }`}
+          >
+            <span className="text-base leading-none">🏢</span>
+            <span className="text-[9px] mt-0.5 tracking-tight font-bold">كمبال</span>
           </button>
 
           {/* 2. Warehouse Tab */}

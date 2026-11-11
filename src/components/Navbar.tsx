@@ -138,6 +138,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>الفواتير والطلبيات</span>
               </button>
               <button
+                onClick={() => handleTabClick('kambalOrders')}
+                style={activeTab === 'kambalOrders' ? { borderColor: 'var(--theme-primary)', color: 'var(--theme-primary)' } : undefined}
+                className={`transition-colors whitespace-nowrap cursor-pointer pb-1 border-b-2 flex items-center gap-1.5 ${
+                  activeTab === 'kambalOrders'
+                    ? 'font-black'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:border-slate-300'
+                }`}
+              >
+                <span>🏢</span>
+                <span>طلبيات كمبال</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 font-bold">
+                  125 صنف
+                </span>
+              </button>
+              <button
                 onClick={() => handleTabClick('warehouse')}
                 style={activeTab === 'warehouse' ? { borderColor: 'var(--theme-primary)', color: 'var(--theme-primary)' } : undefined}
                 className={`transition-colors whitespace-nowrap cursor-pointer pb-1 border-b-2 flex items-center gap-1.5 ${
@@ -438,6 +453,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <span>🧾</span>
                 <span>الفواتير والطلبيات</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick('kambalOrders')}
+                style={activeTab === 'kambalOrders' ? { backgroundColor: 'var(--theme-primary)', color: '#ffffff' } : undefined}
+                className={`w-full text-right px-3 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center justify-between ${
+                  activeTab === 'kambalOrders'
+                    ? 'font-bold shadow-xs'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span>🏢</span>
+                  <span>طلبيات كمبال للأدوية</span>
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                  125 صنف
+                </span>
               </button>
 
               <button

@@ -44,7 +44,7 @@ export interface SalesRecord {
 }
 
 export interface FilterState {
-  dateRange: 'all' | 'thisWeek' | '7days' | '30days' | '90days' | 'thisMonth' | 'lastMonth' | 'custom';
+  dateRange: 'all' | 'today' | 'thisWeek' | '7days' | '30days' | '90days' | 'thisMonth' | 'lastMonth' | 'custom';
   startDate: string;
   endDate: string;
   selectedCustomer: string;
@@ -157,6 +157,7 @@ export interface PhoneStorageConfig {
 
 export type AppTab =
   | 'invoices'
+  | 'kambalOrders'
   | 'warehouse'
   | 'items'
   | 'customers'

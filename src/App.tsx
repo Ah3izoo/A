@@ -23,6 +23,7 @@ import { AppSettingsModal } from './components/AppSettingsModal';
 import { SalesRepManagerModal, SalesRepItem } from './components/SalesRepManagerModal';
 import { AdminCredentialsModal } from './components/AdminCredentialsModal';
 import { WarehouseManager } from './components/WarehouseManager';
+import { KambalOrdersSection } from './components/KambalOrdersSection';
 import { applyScreenSettingsToDOM, getScreenSettings } from './services/screenAdaptationService';
 import {
   APP_NAME,
@@ -30,6 +31,7 @@ import {
   MASTER_PRODUCT_CATALOG,
   SUPPLIER_LINE,
 } from './data/productCatalog';
+import { KAMBAL_CATALOG } from './data/kambalCatalog';
 import {
   AppTab,
   CurrencyCode,
@@ -52,7 +54,7 @@ import {
 } from './utils/pdfHelper';
 
 const STORAGE_KEY_SALES = 'looker_sales_ahmedjam_v11';
-const STORAGE_KEY_PRICES = 'looker_prices_ahmedjam_v12';
+const STORAGE_KEY_PRICES = 'looker_prices_ahmedjam_v13_kambal';
 
 export default function App() {
   // 1. Data State with LocalStorage (All customer records deleted as requested)
@@ -74,18 +76,38 @@ export default function App() {
     return [];
   });
 
-  // 2. Product Catalog / Price List State with LocalStorage (v12 with updated 24 prices & warehouse stock)
+  // 2. Product Catalog / Price List State with LocalStorage (v13: 125 Kambal & Jamjoom medicines in warehouse)
   const [catalog, setCatalog] = useState<ProductItem[]>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY_PRICES);
+      const stored =
+        localStorage.getItem(STORAGE_KEY_PRICES) ||
+        localStorage.getItem('looker_prices_ahmedjam_v12');
       if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        const parsed: ProductItem[] = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge with KAMBAL_CATALOG (125 items) while preserving user custom prices or stock
+          const existingMap = new Map(parsed.map((p) => [p.productName.toLowerCase(), p]));
+          const merged: ProductItem[] = KAMBAL_CATALOG.map((kItem) => {
+            const match = existingMap.get(kItem.productName.toLowerCase());
+            if (match) {
+              return {
+                ...kItem,
+                currentPrice: match.currentPrice ?? kItem.currentPrice,
+                warehouseStock: match.warehouseStock ?? 100,
+              };
+            }
+            return {
+              ...kItem,
+              warehouseStock: 100,
+            };
+          });
+          return merged;
+        }
       }
     } catch {
       // fallback
     }
-    return MASTER_PRODUCT_CATALOG;
+    return KAMBAL_CATALOG;
   });
 
   useEffect(() => {
@@ -378,7 +400,10 @@ export default function App() {
         const itemDate = new Date(iy, (im || 1) - 1, id || 1, 12, 0, 0);
         const refDate = latestDateInDataset;
 
-        if (filters.dateRange === 'thisWeek') {
+        if (filters.dateRange === 'today') {
+          const todayStr = new Date().toISOString().split('T')[0];
+          if (item.date !== todayStr) return false;
+        } else if (filters.dateRange === 'thisWeek') {
           // Current week (starts Saturday) & past 7 days window for medical rep tracking
           const ref = new Date(refDate);
           const day = ref.getDay(); // 0 is Sun, 6 is Sat
@@ -1247,6 +1272,23 @@ export default function App() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ================= TAB 1.5: KAMBAL ORDERS (طلبيات كمبال للأدوية) ================= */}
+        {activeTab === 'kambalOrders' && (
+          <div className="animate-in fade-in duration-200">
+            <KambalOrdersSection
+              salesData={salesData}
+              onAddSalesRecords={handleAddSale}
+              existingCustomers={customersList}
+              activeSalesRep={activeSalesRep}
+              currency={currency}
+              onOpenInvoiceModalWithRecord={(rec) => {
+                setSelectedInvoiceRecord(rec);
+                setIsInvoiceModalOpen(true);
+              }}
+            />
           </div>
         )}
 

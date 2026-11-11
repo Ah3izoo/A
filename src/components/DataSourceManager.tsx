@@ -38,28 +38,67 @@ export const DataSourceManager: React.FC<DataSourceManagerProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
-        try {
-          const parsed = parseCSV(text);
-          if (parsed.length > 0) {
-            setData((prev) => [...parsed, ...prev]);
-            setImportNotice(`تم استيراد ${parsed.length} صفاً بنجاح ودمجها في مصدر البيانات.`);
-          } else {
-            setImportNotice('لم يتم العثور على صفوف صالحة. تأكد من ترويسة الأعمدة المطلوبة.');
+    try {
+      const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+      if (isExcel) {
+        // Parse Excel workbook using XLSX
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const buffer = event.target?.result as ArrayBuffer;
+            const XLSX = await import('xlsx');
+            const wb = XLSX.read(buffer, { type: 'array' });
+            // Look for detailed sheet or use first sheet
+            const sheetName =
+              wb.SheetNames.find((s) => s.includes('سجلات') || s.includes('Detailed') || s.includes('مبيعات')) ||
+              wb.SheetNames[0];
+            const ws = wb.Sheets[sheetName];
+            const csvText = XLSX.utils.sheet_to_csv(ws);
+            const parsed = parseCSV(csvText);
+
+            if (parsed.length > 0) {
+              setData((prev) => [...parsed, ...prev]);
+              setImportNotice(`تم بنجاح استيراد ${parsed.length} صنف/فاتورة من ملف Excel (${file.name}) ودمجها في النظام.`);
+            } else {
+              setImportNotice('لم يتم العثور على صفوف صالحة في ملف Excel. تأكد من وجود أعمدة الصنف والكمية.');
+            }
+          } catch (err) {
+            console.error('Excel parse error:', err);
+            setImportNotice('حدث خطأ أثناء قراءة ملف Excel.');
           }
-        } catch (err) {
-          setImportNotice('حدث خطأ أثناء قراءة ملف CSV.');
-        }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // Plain CSV / TSV / TXT parsing
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const text = event.target?.result as string;
+          if (text) {
+            try {
+              const parsed = parseCSV(text);
+              if (parsed.length > 0) {
+                setData((prev) => [...parsed, ...prev]);
+                setImportNotice(`تم بنجاح استيراد ${parsed.length} صنف/فاتورة من ملف CSV ودمجها في النظام.`);
+              } else {
+                setImportNotice('لم يتم العثور على صفوف صالحة. تأكد من احتواء الملف على أعمدة الصنف والكمية.');
+              }
+            } catch (err) {
+              console.error('CSV parse error:', err);
+              setImportNotice('حدث خطأ أثناء قراءة ملف CSV.');
+            }
+          }
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setImportNotice('فشل في معالجة الملف المحدد.');
+    }
+
     // reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -101,7 +140,7 @@ export const DataSourceManager: React.FC<DataSourceManagerProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileUpload}
-              accept=".csv,.txt,.tsv"
+              accept=".csv,.txt,.tsv,.xlsx,.xls"
               className="hidden"
             />
             {onOpenCloudModal && (
@@ -127,9 +166,11 @@ export const DataSourceManager: React.FC<DataSourceManagerProps> = ({
             </button>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700 active:scale-95 shadow-2xs"
+              className="px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer border border-slate-300 dark:border-slate-700 active:scale-95 shadow-2xs flex items-center gap-1.5"
+              title="استيراد فواتير من ملف CSV أو Excel سابق"
             >
-              استيراد CSV
+              <span>📥</span>
+              <span>استيراد فواتير (CSV / Excel)</span>
             </button>
             <button
               onClick={handleCopySheets}
